@@ -7,7 +7,7 @@ import (
 	"github.com/apache/thrift/lib/go/thrift"
 )
 
-type ThriftOverHttpSendProt struct {
+type sendProt struct {
 	transport *http.Client
 	url       string
 	sendbuf   *thrift.TMemoryBuffer
@@ -16,7 +16,7 @@ type ThriftOverHttpSendProt struct {
 	*thrift.TBinaryProtocol
 }
 
-func (t *ThriftOverHttpSendProt) Flush() error {
+func (t *sendProt) Flush() error {
 	req, err := http.NewRequest("POST", t.url, t.sendbuf)
 	req.Header.Set("Content-Length", string(t.sendbuf.Len()))
 	req.Header.Set("Content-Type", "application/x-thrift")
@@ -31,15 +31,16 @@ func (t *ThriftOverHttpSendProt) Flush() error {
 	return nil
 }
 
-func NewThriftOverHttpSendProt(url string, recvbuf *thrift.TMemoryBuffer) thrift.TProtocol {
+func getSendProt(url string, recvbuf *thrift.TMemoryBuffer) thrift.TProtocol {
 	sendbuf := thrift.NewTMemoryBuffer()
 	underlying := thrift.NewTBinaryProtocol(sendbuf, true, true)
-	return &ThriftOverHttpSendProt{&http.Client{}, url, sendbuf, recvbuf, underlying}
+	return &sendProt{&http.Client{}, url, sendbuf, recvbuf, underlying}
 }
 
-func NewThriftHttpRpcClient(url string, client func(in, out thrift.TProtocol) interface{}) interface{} {
+// pass these to the generated `NewFooClientProtocol(nil, recv, send)` method.
+func NewClientProts(url string) (recv, send thrift.TProtocol) {
 	recvbuf := thrift.NewTMemoryBuffer()
-	send := NewThriftOverHttpSendProt(url, recvbuf)
-	recv := thrift.NewTBinaryProtocol(recvbuf, true, true)
-	return client(recv, send)
+	send = getSendProt(url, recvbuf)
+	recv = thrift.NewTBinaryProtocol(recvbuf, true, true)
+	return recv, send
 }

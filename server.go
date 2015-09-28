@@ -8,9 +8,12 @@ import (
 	"github.com/dt/go-metrics-reporting"
 )
 
+// Thrift's generated Processors have `GetProcessorFunction` and satisfy this interface.
 type HasProcessFunc interface {
 	GetProcessorFunction(key string) (processor thrift.TProcessorFunction, ok bool)
 }
+
+// Wraps a generated thrift Processor, providing a ServeHTTP method to serve thrift-over-http.
 type ThriftOverHTTPHandler struct {
 	HasProcessFunc
 }
@@ -19,8 +22,8 @@ func NewThriftOverHTTPHandler(p HasProcessFunc) *ThriftOverHTTPHandler {
 	return &ThriftOverHTTPHandler{p}
 }
 
-// borrowed from generated thrift code, but with instrumentation added.
-func (p ThriftOverHTTPHandler) Process(iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
+// Mostly borrowed from generated thrift code `Process` method, but with timing added.
+func (p ThriftOverHTTPHandler) handle(iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
 	name, _, seqId, err := iprot.ReadMessageBegin()
 	if err != nil {
 		return false, err
@@ -63,7 +66,7 @@ func (h ThriftOverHTTPHandler) ServeHTTP(out http.ResponseWriter, req *http.Requ
 		outbuf := thrift.NewTMemoryBuffer()
 		oprot := thrift.NewTBinaryProtocol(outbuf, true, true)
 
-		ok, err := h.Process(iprot, oprot)
+		ok, err := h.handle(iprot, oprot)
 
 		if ok {
 			outbuf.WriteTo(out)
