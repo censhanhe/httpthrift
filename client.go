@@ -13,7 +13,7 @@ type sendProt struct {
 	sendbuf   *thrift.TMemoryBuffer
 	recvbuf   *thrift.TMemoryBuffer
 
-	*thrift.TBinaryProtocol
+	thrift.TProtocol
 }
 
 func (t *sendProt) Flush() error {
@@ -31,20 +31,29 @@ func (t *sendProt) Flush() error {
 	return nil
 }
 
-func getSendProt(url func() string, recvbuf *thrift.TMemoryBuffer) thrift.TProtocol {
+func getSendProt(url func() string, recvbuf *thrift.TMemoryBuffer, compact bool) thrift.TProtocol {
 	sendbuf := thrift.NewTMemoryBuffer()
-	underlying := thrift.NewTBinaryProtocol(sendbuf, true, true)
+	var underlying thrift.TProtocol
+	if compact {
+		underlying = thrift.NewTCompactProtocol(sendbuf)
+	} else {
+		underlying = thrift.NewTBinaryProtocol(sendbuf, true, true)
+	}
 	return &sendProt{&http.Client{}, url, sendbuf, recvbuf, underlying}
 }
 
-func NewDynamicClientProts(url func() string) (recv, send thrift.TProtocol) {
+func NewDynamicClientProts(url func() string, compact bool) (recv, send thrift.TProtocol) {
 	recvbuf := thrift.NewTMemoryBuffer()
-	send = getSendProt(url, recvbuf)
-	recv = thrift.NewTBinaryProtocol(recvbuf, true, true)
+	send = getSendProt(url, recvbuf, compact)
+	if compact {
+		recv = thrift.NewTCompactProtocol(recvbuf)
+	} else {
+		recv = thrift.NewTBinaryProtocol(recvbuf, true, true)
+	}
 	return recv, send
 }
 
 // pass these to the generated `NewFooClientProtocol(nil, recv, send)` method.
-func NewClientProts(url string) (recv, send thrift.TProtocol) {
-	return NewDynamicClientProts(func() string { return url })
+func NewClientProts(url string, compact bool) (recv, send thrift.TProtocol) {
+	return NewDynamicClientProts(func() string { return url }, compact)
 }
