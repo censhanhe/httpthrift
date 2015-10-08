@@ -25,9 +25,9 @@ func (t *sendProt) Flush() error {
 	if err != nil {
 		return err
 	}
+	defer resp.Body.Close()
 
 	io.Copy(t.recvbuf, resp.Body)
-	resp.Body.Close()
 	return nil
 }
 
@@ -39,7 +39,7 @@ func getSendProt(url func() string, recvbuf *thrift.TMemoryBuffer, compact bool)
 	} else {
 		underlying = thrift.NewTBinaryProtocol(sendbuf, true, true)
 	}
-	return &sendProt{&http.Client{}, url, sendbuf, recvbuf, underlying}
+	return &sendProt{&http.Client{Transport: &http.Transport{}}, url, sendbuf, recvbuf, underlying}
 }
 
 func NewDynamicClientProts(url func() string, compact bool) (recv, send thrift.TProtocol) {
