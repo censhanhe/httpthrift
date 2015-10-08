@@ -15,11 +15,12 @@ type HasProcessFunc interface {
 
 // Wraps a generated thrift Processor, providing a ServeHTTP method to serve thrift-over-http.
 type ThriftOverHTTPHandler struct {
+	stats *report.Recorder
 	HasProcessFunc
 }
 
-func NewThriftOverHTTPHandler(p HasProcessFunc) *ThriftOverHTTPHandler {
-	return &ThriftOverHTTPHandler{p}
+func NewThriftOverHTTPHandler(p HasProcessFunc, stats *report.Recorder) *ThriftOverHTTPHandler {
+	return &ThriftOverHTTPHandler{stats, p}
 }
 
 // Mostly borrowed from generated thrift code `Process` method, but with timing added.
@@ -32,7 +33,9 @@ func (p ThriftOverHTTPHandler) handle(iprot, oprot thrift.TProtocol) (success bo
 	if processor, ok := p.GetProcessorFunction(name); ok {
 		start := time.Now()
 		success, err = processor.Process(seqId, iprot, oprot)
-		report.TimeSince(name, start)
+		if p.stats != nil {
+			p.stats.TimeSince(name, start)
+		}
 		return
 	}
 
@@ -61,10 +64,24 @@ func (h ThriftOverHTTPHandler) ServeHTTP(out http.ResponseWriter, req *http.Requ
 		in.ReadFrom(req.Body)
 		defer req.Body.Close()
 
-		iprot := thrift.NewTBinaryProtocol(in, true, true)
+		compact := false
+
+		if in.Len() > 0 && in.Bytes()[0] == thrift.COMPACT_PROTOCOL_ID {
+			compact = true
+		}
 
 		outbuf := thrift.NewTMemoryBuffer()
-		oprot := thrift.NewTBinaryProtocol(outbuf, true, true)
+
+		var iprot thrift.TProtocol
+		var oprot thrift.TProtocol
+
+		if compact {
+			iprot = thrift.NewTCompactProtocol(in)
+			oprot = thrift.NewTCompactProtocol(outbuf)
+		} else {
+			iprot = thrift.NewTBinaryProtocol(in, true, true)
+			oprot = thrift.NewTBinaryProtocol(outbuf, true, true)
+		}
 
 		ok, err := h.handle(iprot, oprot)
 
