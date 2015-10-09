@@ -2,6 +2,7 @@ package httpthrift
 
 import (
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/apache/thrift/lib/go/thrift"
@@ -15,12 +16,13 @@ type HasProcessFunc interface {
 
 // Wraps a generated thrift Processor, providing a ServeHTTP method to serve thrift-over-http.
 type ThriftOverHTTPHandler struct {
-	stats *report.Recorder
+	stats   *report.Recorder
+	buffers sync.Pool
 	HasProcessFunc
 }
 
 func NewThriftOverHTTPHandler(p HasProcessFunc, stats *report.Recorder) *ThriftOverHTTPHandler {
-	return &ThriftOverHTTPHandler{stats, p}
+	return &ThriftOverHTTPHandler{stats, sync.Pool{}, p}
 }
 
 // Mostly borrowed from generated thrift code `Process` method, but with timing added.
@@ -51,35 +53,41 @@ func (p ThriftOverHTTPHandler) handle(iprot, oprot thrift.TProtocol) (success bo
 	return false, e
 }
 
-func (h ThriftOverHTTPHandler) ServeHTTP(out http.ResponseWriter, req *http.Request) {
-	if req.Method == "POST" {
-		var in *thrift.TMemoryBuffer
-		size := int(req.ContentLength)
-		if size > 0 {
-			in = thrift.NewTMemoryBufferLen(size)
-		} else {
-			in = thrift.NewTMemoryBuffer()
-		}
+func (h *ThriftOverHTTPHandler) getBuf() *thrift.TMemoryBuffer {
+	res := h.buffers.Get()
+	if res == nil {
+		return thrift.NewTMemoryBuffer()
+	} else {
+		out := res.(*thrift.TMemoryBuffer)
+		out.Reset()
+		return out
+	}
+}
 
-		in.ReadFrom(req.Body)
+func (h *ThriftOverHTTPHandler) ServeHTTP(out http.ResponseWriter, req *http.Request) {
+	if req.Method == "POST" {
+		inbuf := h.getBuf()
+		defer h.buffers.Put(inbuf)
+		outbuf := h.getBuf()
+		defer h.buffers.Put(outbuf)
+
+		inbuf.ReadFrom(req.Body)
 		defer req.Body.Close()
 
 		compact := false
 
-		if in.Len() > 0 && in.Bytes()[0] == thrift.COMPACT_PROTOCOL_ID {
+		if inbuf.Len() > 0 && inbuf.Bytes()[0] == thrift.COMPACT_PROTOCOL_ID {
 			compact = true
 		}
-
-		outbuf := thrift.NewTMemoryBuffer()
 
 		var iprot thrift.TProtocol
 		var oprot thrift.TProtocol
 
 		if compact {
-			iprot = thrift.NewTCompactProtocol(in)
+			iprot = thrift.NewTCompactProtocol(inbuf)
 			oprot = thrift.NewTCompactProtocol(outbuf)
 		} else {
-			iprot = thrift.NewTBinaryProtocol(in, true, true)
+			iprot = thrift.NewTBinaryProtocol(inbuf, true, true)
 			oprot = thrift.NewTBinaryProtocol(outbuf, true, true)
 		}
 
