@@ -1,3 +1,6 @@
+# MOVED TO [fsgo](http://github.com/foursquare/fsgo/tree/master/net/httpthrift)
+
+
 # Thrift-RPC-over-HTTP in Go
 [![Build Status](https://api.travis-ci.org/dt/httpthrift.svg)](https://travis-ci.org/dt/httpthrift)
 
